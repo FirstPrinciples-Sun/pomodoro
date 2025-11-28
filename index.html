@@ -1,0 +1,369 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, Play, Pause, RotateCcw, X, Check, Coffee, Brain, Zap, MoreHorizontal, Volume2, VolumeX } from 'lucide-react';
+
+export default function App() {
+    // --- Configuration & Themes ---
+    const modes = {
+        focus: { 
+            id: 'focus',
+            label: 'Focus', 
+            subLabel: 'ถึงเวลาลุยงาน',
+            gradient: 'from-slate-800 to-gray-900',
+            accent: 'text-emerald-400',
+            ringColor: '#34d399', // emerald-400
+            glow: 'shadow-[0_0_50px_-12px_rgba(52,211,153,0.5)]',
+            icon: <Brain size={18} />
+        },
+        short: { 
+            id: 'short',
+            label: 'Short Break', 
+            subLabel: 'พักสายตาสักนิด',
+            gradient: 'from-indigo-900 to-slate-900',
+            accent: 'text-indigo-400',
+            ringColor: '#818cf8', // indigo-400
+            glow: 'shadow-[0_0_50px_-12px_rgba(129,140,248,0.5)]',
+            icon: <Coffee size={18} />
+        },
+        long: { 
+            id: 'long',
+            label: 'Long Break', 
+            subLabel: 'เติมพลังให้เต็มที่',
+            gradient: 'from-rose-900 to-slate-900',
+            accent: 'text-rose-400',
+            ringColor: '#fb7185', // rose-400
+            glow: 'shadow-[0_0_50px_-12px_rgba(251,113,133,0.5)]',
+            icon: <Zap size={18} />
+        }
+    };
+
+    // --- State ---
+    const [mode, setMode] = useState('focus');
+    const [timeLeft, setTimeLeft] = useState(25 * 60);
+    const [isActive, setIsActive] = useState(false);
+    const [cycles, setCycles] = useState(0); // Completed pomodoros
+    const [showSettings, setShowSettings] = useState(false);
+    const [taskName, setTaskName] = useState('');
+    const [soundEnabled, setSoundEnabled] = useState(true);
+
+    // Settings State
+    const [settings, setSettings] = useState({
+        focus: 25,
+        short: 5,
+        long: 15,
+        autoStartBreaks: true,
+        autoStartPomodoros: false,
+        longBreakInterval: 4
+    });
+
+    const timerRef = useRef(null);
+
+    // --- Sound Logic ---
+    const playNotification = () => {
+        if (!soundEnabled) return;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        
+        const ctx = new AudioContext();
+        const t = ctx.currentTime;
+        
+        // Create a nice bell sound
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, t); // C5
+        osc.frequency.exponentialRampToValueAtTime(261.63, t + 1.5); // Drop to C4
+        
+        gain.gain.setValueAtTime(0.3, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 2);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start();
+        osc.stop(t + 2);
+    };
+
+    // --- Timer Engine & Auto-Switch Logic ---
+    useEffect(() => {
+        if (isActive && timeLeft > 0) {
+            timerRef.current = setInterval(() => {
+                setTimeLeft((prev) => prev - 1);
+            }, 1000);
+        } else if (timeLeft === 0 && isActive) {
+            // Timer Finished
+            clearInterval(timerRef.current);
+            playNotification();
+            handleTimerComplete();
+        }
+        
+        // Update Title
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        document.title = `${mins}:${secs < 10 ? '0' : ''}${secs} - ${modes[mode].label}`;
+
+        return () => clearInterval(timerRef.current);
+    }, [isActive, timeLeft, mode]); // Dependencies
+
+    const handleTimerComplete = () => {
+        if (mode === 'focus') {
+            const newCycles = cycles + 1;
+            setCycles(newCycles);
+            
+            // Determine next break
+            if (newCycles % settings.longBreakInterval === 0) {
+                switchMode('long', settings.autoStartBreaks);
+            } else {
+                switchMode('short', settings.autoStartBreaks);
+            }
+        } else {
+            // Break finished, back to focus
+            switchMode('focus', settings.autoStartPomodoros);
+        }
+    };
+
+    const switchMode = (newMode, shouldAutoStart = false) => {
+        setMode(newMode);
+        setTimeLeft(settings[newMode] * 60);
+        setIsActive(shouldAutoStart);
+    };
+
+    // --- Helpers ---
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return { m: mins < 10 ? `0${mins}` : mins, s: secs < 10 ? `0${secs}` : secs };
+    };
+
+    const toggleTimer = () => setIsActive(!isActive);
+    
+    const resetTimer = () => {
+        setIsActive(false);
+        setTimeLeft(settings[mode] * 60);
+    };
+
+    // --- Progress Ring Math ---
+    const totalTime = settings[mode] * 60;
+    const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
+    const radius = 120;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+    return (
+        <div className={`min-h-screen flex items-center justify-center p-4 transition-all duration-1000 bg-gradient-to-br ${modes[mode].gradient} font-sans overflow-hidden relative`}>
+            
+            {/* Background Texture/Noise (Optional for texture) */}
+            <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&family=Sarabun:wght@300;400;500&display=swap');
+                
+                body { font-family: 'Outfit', 'Sarabun', sans-serif; }
+                
+                .glass-card {
+                    background: rgba(20, 25, 40, 0.6);
+                    backdrop-filter: blur(24px);
+                    -webkit-backdrop-filter: blur(24px);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                }
+                
+                .timer-nums { font-variant-numeric: tabular-nums; }
+                
+                .glow-text { text-shadow: 0 0 20px currentColor; }
+                
+                /* Animations */
+                @keyframes breathe {
+                    0%, 100% { transform: scale(1); opacity: 0.8; }
+                    50% { transform: scale(1.02); opacity: 1; }
+                }
+                .breathing { animation: breathe 4s ease-in-out infinite; }
+                
+                input::placeholder { color: rgba(255,255,255,0.2); }
+            `}</style>
+
+            {/* Main Container */}
+            <div className="glass-card w-full max-w-sm sm:max-w-md rounded-[3rem] p-8 relative z-10 text-white transition-all duration-500">
+                
+                {/* Header Row */}
+                <div className="flex justify-between items-center mb-6">
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5">
+                        <span className={`text-xs font-medium tracking-wider uppercase ${modes[mode].accent}`}>
+                            {modes[mode].label}
+                        </span>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => setSoundEnabled(!soundEnabled)}
+                            className="p-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                        >
+                            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                        </button>
+                        <button 
+                            onClick={() => setShowSettings(true)}
+                            className="p-2 rounded-full hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                        >
+                            <Settings size={18} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Task Input */}
+                <div className="mb-8 text-center">
+                    <input 
+                        type="text" 
+                        placeholder="คุณกำลังโฟกัสเรื่องอะไร?" 
+                        value={taskName}
+                        onChange={(e) => setTaskName(e.target.value)}
+                        className="w-full bg-transparent text-center text-xl sm:text-2xl font-light text-white outline-none placeholder-white/20 tracking-wide"
+                    />
+                    <div className="text-white/40 text-sm mt-1 font-light tracking-wide">{modes[mode].subLabel}</div>
+                </div>
+
+                {/* Timer Visualization */}
+                <div className="relative w-64 h-64 sm:w-72 sm:h-72 mx-auto mb-10 flex items-center justify-center">
+                    {/* Glow Effect Background */}
+                    <div className={`absolute inset-0 rounded-full blur-3xl opacity-20 transition-colors duration-1000 ${isActive ? 'animate-pulse' : ''}`} style={{ backgroundColor: modes[mode].ringColor }}></div>
+
+                    <svg className="absolute w-full h-full transform -rotate-90 drop-shadow-2xl">
+                        {/* Track */}
+                        <circle
+                            cx="50%" cy="50%" r={radius}
+                            stroke="rgba(255,255,255,0.05)"
+                            strokeWidth="6"
+                            fill="transparent"
+                        />
+                        {/* Progress */}
+                        <circle
+                            cx="50%" cy="50%" r={radius}
+                            stroke={modes[mode].ringColor}
+                            strokeWidth="6"
+                            fill="transparent"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={strokeDashoffset}
+                            strokeLinecap="round"
+                            className="transition-all duration-1000 ease-linear"
+                            style={{ filter: `drop-shadow(0 0 6px ${modes[mode].ringColor})` }}
+                        />
+                    </svg>
+                    
+                    {/* Timer Text */}
+                    <div className="text-center z-10 flex flex-col items-center">
+                        <div className={`text-7xl sm:text-8xl font-thin tracking-tighter timer-nums transition-colors duration-500 ${isActive ? 'text-white' : 'text-white/80'}`}>
+                            {formatTime(timeLeft).m}
+                            <span className="text-white/30 text-4xl align-top mx-1">:</span>
+                            {formatTime(timeLeft).s}
+                        </div>
+                        
+                        {/* Status Icon */}
+                        <div className={`mt-4 p-2 rounded-full bg-white/5 backdrop-blur-md border border-white/5 text-white/70 transition-all duration-500 ${isActive ? 'scale-110 ' + modes[mode].accent : ''}`}>
+                             {isActive ? modes[mode].icon : <MoreHorizontal size={18} />}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main Controls */}
+                <div className="flex justify-center items-center gap-8 mb-8">
+                    <button 
+                        onClick={resetTimer}
+                        className="p-4 rounded-2xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all active:scale-95"
+                    >
+                        <RotateCcw size={22} />
+                    </button>
+
+                    <button 
+                        onClick={toggleTimer}
+                        className={`h-24 w-24 rounded-[2rem] flex items-center justify-center text-white shadow-2xl transition-all duration-300 transform hover:scale-105 active:scale-95 ${modes[mode].glow}`}
+                        style={{ background: modes[mode].ringColor }}
+                    >
+                        {isActive ? <Pause size={36} fill="currentColor" className="text-slate-900" /> : <Play size={36} fill="currentColor" className="text-slate-900 ml-1" />}
+                    </button>
+                    
+                    {/* Cycle Counter */}
+                    <div className="flex flex-col items-center justify-center gap-1 p-3 rounded-2xl bg-white/5 min-w-[3.5rem]">
+                        <span className="text-xs text-white/40 uppercase font-bold tracking-widest">รอบ</span>
+                        <span className="text-xl font-medium text-white">{cycles}</span>
+                    </div>
+                </div>
+
+                {/* Session Dots */}
+                <div className="flex justify-center gap-2">
+                    {[...Array(settings.longBreakInterval)].map((_, i) => (
+                        <div 
+                            key={i} 
+                            className={`h-1.5 rounded-full transition-all duration-500 ${
+                                i < (cycles % settings.longBreakInterval) 
+                                ? `w-6 ${modes['focus'].accent} bg-current shadow-[0_0_10px_currentColor]` 
+                                : 'w-2 bg-white/10'
+                            }`}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {/* --- Settings Modal --- */}
+            {showSettings && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setShowSettings(false)}></div>
+                    <div className="bg-[#1a1f2e] border border-white/10 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 z-10 relative animate-[fadeIn_0.3s_ease-out]">
+                        
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-lg font-medium tracking-wide">การตั้งค่า</h2>
+                            <button onClick={() => setShowSettings(false)} className="text-white/40 hover:text-white">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Time Settings */}
+                        <div className="space-y-4 mb-6">
+                            <h3 className="text-xs font-bold text-white/30 uppercase tracking-widest mb-3">เวลา (นาที)</h3>
+                            {[
+                                { key: 'focus', label: 'เวลาโฟกัส' },
+                                { key: 'short', label: 'พักสั้น' },
+                                { key: 'long', label: 'พักยาว' }
+                            ].map((item) => (
+                                <div key={item.key} className="flex justify-between items-center bg-white/5 p-3 rounded-xl">
+                                    <label className="text-white/70 text-sm">{item.label}</label>
+                                    <input 
+                                        type="number" 
+                                        value={settings[item.key]}
+                                        onChange={(e) => setSettings({...settings, [item.key]: parseInt(e.target.value) || 1})}
+                                        className="w-16 bg-black/20 text-center text-white rounded-lg py-1 outline-none focus:ring-1 focus:ring-white/30"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Automation Settings */}
+                        <div className="space-y-3 mb-6">
+                             <h3 className="text-xs font-bold text-white/30 uppercase tracking-widest mb-3">ระบบอัตโนมัติ</h3>
+                             <div className="flex justify-between items-center bg-white/5 p-3 rounded-xl cursor-pointer" onClick={() => setSettings(s => ({...s, autoStartBreaks: !s.autoStartBreaks}))}>
+                                <span className="text-white/70 text-sm">เริ่มพักอัตโนมัติ</span>
+                                <div className={`w-10 h-6 rounded-full p-1 transition-colors ${settings.autoStartBreaks ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${settings.autoStartBreaks ? 'translate-x-4' : ''}`} />
+                                </div>
+                             </div>
+                             <div className="flex justify-between items-center bg-white/5 p-3 rounded-xl cursor-pointer" onClick={() => setSettings(s => ({...s, autoStartPomodoros: !s.autoStartPomodoros}))}>
+                                <span className="text-white/70 text-sm">เริ่มโฟกัสอัตโนมัติ</span>
+                                <div className={`w-10 h-6 rounded-full p-1 transition-colors ${settings.autoStartPomodoros ? 'bg-emerald-500' : 'bg-white/10'}`}>
+                                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${settings.autoStartPomodoros ? 'translate-x-4' : ''}`} />
+                                </div>
+                             </div>
+                        </div>
+
+                        <button 
+                            onClick={() => {
+                                resetTimer();
+                                setShowSettings(false);
+                            }}
+                            className="w-full bg-white text-slate-900 py-3 rounded-xl font-semibold hover:bg-emerald-400 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Check size={18} /> บันทึก
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
